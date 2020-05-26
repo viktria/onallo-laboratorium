@@ -1,0 +1,191 @@
+#python
+#pingvin genom letöltése
+wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/010/080/355/GCA_010080355.1_BGI_Emin.V1/GCA_010080355.1_BGI_Emin.V1_genomic.fna.gz
+
+#BWA INDEX
+export PATH=$PATH:/data/tools/bwa
+bwa index -p PENGUIN GCA_010080355.1_BGI_Emin.V1_genomic.fna
+
+#BOWTIE2 INDEX
+export PATH=$PATH:/data/tools/bowtie2-2.3.5-linux-x86_64
+bowtie2-build GCA_010080355.1_BGI_Emin.V1_genomic.fna PENGUIN_BWT
+#single read eredmenyekés paired end ereedmenyek szamara kulon mappa
+mkdir single
+mkdir paired
+
+#single read
+cd single
+export PATH=$PATH:/data/tools/bbmap
+randomreads.sh ref=../GCA_010080355.1_BGI_Emin.V1_genomic.fna out=peng_bestquality.fq \
+paired=f \
+seed=3 \
+maxlength=250 \
+minlength=50 \
+reads=1000 \
+snprate=0.05 \
+maxsnps=3 \
+insrate=0.01 \
+maxinss=2 \
+maxinslen=4 \
+delrate=0.001 \
+maxdels=4 \
+maxdellen=4 \
+nrate=0.1 \
+maxns=10 \
+maxq=36 \
+midq=32 \
+minq=28
+
+#ezt megcsinaltuk a masik harom minosegre is(a minoseg csokkeno sorrendben szerepel)
+maxq=36 \
+midq=25 \
+minq=18
+
+maxq=40 \
+midq=15 \
+minq=10
+
+maxq=25 \
+midq=15 \
+minq=5
+
+#FastQC
+export PATH=$PATH:/data/tools/FastQC
+mkdir fastQC
+fastqc *.fq -t 19 -o fastQC
+multiqc -n 'multi_qc_raw' fastQC #ezzel egy fajlba rakjuj a fastQC eredmenyeket
+
+#ket kulonbozo program eredmenyeinek kulon mappa letrehozasa
+mkdir bwa_align
+mkdir bwt_align
+
+#BWA
+export PATH=$PATH:/data/tools/bwa
+bwa mem ../BWA/PENGUIN peng_bestquality.fq > bwa_align/illesztesbest.sam
+bwa mem ../BWA/PENGUIN peng_minq18quality.fq > bwa_align/illesztesminq18.sam
+bwa mem ../BWA/PENGUIN peng_minq10quality.fq > bwa_align/illesztesminq10.sam
+bwa mem ../BWA/PENGUIN peng_minq5quality.fq > bwa_align/illesztesminq5.sam
+
+#szukseges adatok kimentese
+cd bwa_align
+samtools view -Sb -f 4 illesztesbest.sam > illesztesbest_nincs.bam
+samtools view -Sb -f 4 illesztesminq18.sam > illesztesminq18_nincs.bam
+samtools view -Sb -f 4 illesztesminq10.sam > illesztesminq10_nincs.bam
+samtools view -Sb -f 4 illesztesminq5.sam > illesztesminq5_nincs.bam
+cd ..
+
+#BOWTIE2
+export PATH=$PATH:/data/tools/bowtie2-2.3.5-linux-x86_64     
+for f in peng*.fq
+do
+  bam=${f/'.fq'/'_nincs.bam'}
+  bowtie2 -p 4 --very-sensitive -x ../BOWTIE/PENGUIN_BWT $f | samtools view -Sb -f 4 > bwt_align/$bam
+done
+cd..
+#R programozasi nyelvre valtunk
+
+library(Rsamtools)
+setwd('bwa_align')
+bam.fajlom = 'illesztesbest_nincs.bam'
+countBam(bam.fajlom)
+#a masik haromra is megcsinaltam es az szamomra fontos eredmenyt tablazatba kiirtam
+setwd('bwt_align')
+bam.fajlom = 'illesztesbest_nincs
+countBam(bam.fajlom)
+#a masik haromra is megcsinaltam es az szamomra fontos eredmenyt tablazatba kiirtam
+q()
+
+#viszavaltunk pythonra
+cd .. #visszalepunk a fomappaba, hogy atlephessunk a paired-end reszere letrehozott mappaba
+
+#paired-end read
+cd paired
+export PATH=$PATH:/data/tools/bbmap
+randomreads.sh ref=../GCA_010080355.1_BGI_Emin.V1_genomic.fna out1=peng_random_paired_01_fwd.fq out2=peng_random_paired_01_rev.fq \
+paired=t \
+minlength=50 \
+maxlength=250 \
+reads=1000 \
+seed=3 \
+snprate=0.05 \
+maxsnps=3 \
+insrate=0.01 \
+maxinss=2 \
+maxinslen=4 \
+delrate=0.001 \
+maxdels=4 \
+maxdellen=4 \
+nrate=0.1 \
+maxns=10 \
+interleaved=t
+maxq=36 \
+midq=32 \
+minq=28
+
+#ezt megcsinaltuk a masik harom minosegre is(a minoseg csokkeno sorrendben szerepel)
+maxq=36 \
+midq=25 \
+minq=18
+
+maxq=40 \
+midq=15 \
+minq=10
+
+maxq=25 \
+midq=15 \
+minq=5
+
+#fastQC
+export PATH=$PATH:/data/tools/FastQC
+mkdir fastQC
+fastqc *.fq -t 19 -o fastQC
+multiqc -n 'multi_qc_raw' fastQC
+
+#ket kulonbozo program eredmenyeinek kulon mappa letrehozasa
+mkdir bwa_align
+mkdir bwt_align
+
+#BWA
+cd bwa_align
+export PATH=$PATH:/data/tools/bwa
+bwa mem ../BWA/PENGUIN peng_random_paired_01_fwd.fq peng_random_paired_01_rev.fq > bwa_align/illesztes01.sam
+bwa mem ../BWA/PENGUIN peng_random_paired_02_fwd.fq peng_random_paired_02_rev.fq > bwa_align/illesztes02.sam
+bwa mem ../BWA/PENGUIN peng_random_paired_03_fwd.fq peng_random_paired_03_rev.fq > bwa_align/illesztes03.sam
+bwa mem ../BWA/PENGUIN peng_random_paired_04_fwd.fq peng_random_paired_04_rev.fq > bwa_align/illesztes04.sam
+#samtools a szerveren ugy van telepitve, hogy nem kell az eleresi utat megadni, mas szerveren maskepp mukodhet
+samtools view -Sb -f 4 illesztes01.sam > illesztes01_nincs.bam
+samtools view -Sb -f 4 illesztes02.sam > illesztes02_nincs.bam
+samtools view -Sb -f 4 illesztes03.sam > illesztes03_nincs.bam
+samtools view -Sb -f 4 illesztes04.sam > illesztes04_nincs.bam
+cd ..
+
+cd bwt_align
+export PATH=$PATH:/data/tools/bowtie2-2.3.5-linux-x86_64
+
+for f in *_fwd.fq
+do
+  r=${f/'_fwd.fq'/'_rev.fq'}
+  bam=${f/'_fwd.fq'/'.bam'}
+  bowtie2 -p 4 --very-sensitive -x ../BOWTIE/PENGUIN_BWT -1 $f -2 $r | samtools view -Sb -f 4 > bwt_align/$bam 
+done
+cd ..
+
+#R programozasi nyelvre valtunk
+library(Rsamtools)
+setwd('bwa_align')
+bam.fajlom = 'illesztesbest_nincs.bam'
+countBam(bam.fajlom)
+#a masik haromra is megcsinaltam es az szamomra fontos eredmenyt tablazatba kiirtam
+setwd('bwt_align')
+bam.fajlom = 'illesztesbest_nincs
+countBam(bam.fajlom)
+#a masik haromra is megcsinaltam es az szamomra fontos eredmenyt tablazatba kiirtam
+q()
+
+
+
+
+
+
+
+
